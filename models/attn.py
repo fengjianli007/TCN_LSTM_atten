@@ -105,9 +105,11 @@ class ProbAttention(nn.Module):
         keys = keys.transpose(2,1)
         values = values.transpose(2,1)
 
-        U_part = self.factor * np.ceil(np.log(L_K)).astype('int').item() # c*ln(L_k)
-        u = self.factor * np.ceil(np.log(L_Q)).astype('int').item() # c*ln(L_q) 
-
+        # U_part = self.factor * np.ceil(np.log(L_K)).astype('int').item() # c*ln(L_k)
+        # u = self.factor * np.ceil(np.log(L_Q)).astype('int').item() # c*ln(L_q) 
+        U_part = self.factor * torch.ceil(torch.log(torch.tensor(L_K).float())).int() # c*ln(L_k)
+        u = self.factor * (torch.ceil(torch.log(torch.tensor(L_Q).float())).int()) # c*ln(L_q)
+        
         U_part = U_part if U_part<L_K else L_K
         u = u if u<L_Q else L_Q
         
@@ -122,7 +124,7 @@ class ProbAttention(nn.Module):
         # update the context with selected top_k queries
         context, attn = self._update_context(context, values, scores_top, index, L_Q, attn_mask)
         
-        return context.contiguous(), attn
+        return context.transpose(2,1).contiguous(), attn
 
 
 class AttentionLayer(nn.Module):
