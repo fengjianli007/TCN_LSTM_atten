@@ -66,7 +66,7 @@ def time_features_from_frequency_str(freq_str: str) -> List[TimeFeature]:
 
     features_by_offsets = {
         offsets.YearEnd: [],
-        offsets.QuarterEnd: [MonthOfYear],
+        offsets.QuarterEnd: [MonthOfYear],  #QuarterEnd 季末
         offsets.MonthEnd: [MonthOfYear],
         offsets.Week: [DayOfMonth, WeekOfYear],
         offsets.Day: [DayOfWeek, DayOfMonth, DayOfYear],
@@ -112,7 +112,7 @@ def time_features_from_frequency_str(freq_str: str) -> List[TimeFeature]:
     raise RuntimeError(supported_freq_msg)
 
 def time_features(dates, timeenc=1, freq='h'):
-    if timeenc==0:
+    if timeenc==0:  #增加五列属性
         dates['month'] = dates.date.apply(lambda row:row.month,1)
         dates['day'] = dates.date.apply(lambda row:row.day,1)
         dates['weekday'] = dates.date.apply(lambda row:row.weekday(),1)
@@ -127,4 +127,5 @@ def time_features(dates, timeenc=1, freq='h'):
         return dates[freq_map[freq.lower()]].values
     if timeenc==1:
         dates = pd.to_datetime(dates.date.values)
+        #(return) time_features_from_frequency_str:[MinuteOfHour(), HourOfDay(), DayOfWeek(), DayOfMonth(), DayOfYear()]
         return np.vstack([feat(dates) for feat in time_features_from_frequency_str(freq)]).transpose(1,0)

@@ -14,15 +14,15 @@ class PositionalEmbedding(nn.Module):
         position = torch.arange(0, max_len).float().unsqueeze(1)
         div_term = (torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model)).exp()
 
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
+        pe[:, 0::2] = torch.sin(position * div_term)#偶数列
+        pe[:, 1::2] = torch.cos(position * div_term)#奇数列
 
-        pe = pe.unsqueeze(0)
+        pe = pe.unsqueeze(0)#z扩充0维
         self.register_buffer('pe', pe)
 
     def forward(self, x):
         return self.pe[:, :x.size(1)]
-
+        #x.size(1)=96  self.pe.shape=torch.Size([1, 5000, 512]) self.pe[:, :x.size(1)].shape=torch.Size([1, 96, 512])
 class TokenEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
         super(TokenEmbedding, self).__init__()
@@ -35,7 +35,7 @@ class TokenEmbedding(nn.Module):
 
     def forward(self, x):
         x = self.tokenConv(x.permute(0, 2, 1)).transpose(1,2)
-        return x
+        return x  #([32, 96, 512])
 
 class FixedEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
@@ -88,10 +88,10 @@ class TimeFeatureEmbedding(nn.Module):
 
         freq_map = {'h':4, 't':5, 's':6, 'm':1, 'a':1, 'w':2, 'd':3, 'b':3}
         d_inp = freq_map[freq]
-        self.embed = nn.Linear(d_inp, d_model)
+        self.embed = nn.Linear(d_inp, d_model)#全连接层实现Global Time Stamp编码
     
     def forward(self, x):
-        return self.embed(x)
+        return self.embed(x) #[32, 96, 512]
 
 class DataEmbedding(nn.Module):
     def __init__(self, c_in, d_model, embed_type='fixed', freq='h', dropout=0.1):
@@ -105,5 +105,6 @@ class DataEmbedding(nn.Module):
 
     def forward(self, x, x_mark):
         x = self.value_embedding(x) + self.position_embedding(x) + self.temporal_embedding(x_mark)
-        
+        #self.value_embedding(x).shape[32, 96, 512] self.position_embedding(x)[1, 96, 512] self.temporal_embedding(x_mark)[32, 96, 512]
+        #x.shape[32, 96, 512]
         return self.dropout(x)

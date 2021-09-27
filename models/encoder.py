@@ -60,12 +60,12 @@ class Encoder(nn.Module):
         self.norm = norm_layer
 
     def forward(self, x, attn_mask=None):
-        # x [B, L, D]
+        # x [B, L, D][32, 96, 512]
         attns = []
         if self.conv_layers is not None:
             for attn_layer, conv_layer in zip(self.attn_layers, self.conv_layers):
-                x, attn = attn_layer(x, attn_mask=attn_mask)
-                x = conv_layer(x)
+                x, attn = attn_layer(x, attn_mask=attn_mask)#x=[32, 96, 512]
+                x = conv_layer(x)#x=[32, 49, 512]
                 attns.append(attn)
             x, attn = self.attn_layers[-1](x)
             attns.append(attn)

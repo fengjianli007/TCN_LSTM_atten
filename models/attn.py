@@ -49,15 +49,18 @@ class ProbAttention(nn.Module):
         B, H, L_K, E = K.shape
         _, _, L_Q, _ = Q.shape
 
-        # calculate the sampled Q_K
+        # calculate the sampled Q_K（计算sample_k=U_part个sampled Q_K）
         K_expand = K.unsqueeze(-3).expand(B, H, L_Q, L_K, E)
         index_sample = torch.randint(L_K, (L_Q, sample_k)) # real U = U_part(factor*ln(L_k))*L_q
+        #index_sample = [96, 25]
         K_sample = K_expand[:, :, torch.arange(L_Q).unsqueeze(1), index_sample, :]
+        #K_sample = [32, 8, 96, 25, 64]
         Q_K_sample = torch.matmul(Q.unsqueeze(-2), K_sample.transpose(-2, -1)).squeeze()
+        #倒数第二维增加一个维度1，之后删除增加的维度[32, 8, 96, 25]
 
         # find the Top_k query with sparisty measurement
-        M = Q_K_sample.max(-1)[0] - torch.div(Q_K_sample.sum(-1), L_K)
-        M_top = M.topk(n_top, sorted=False)[1]
+        M = Q_K_sample.max(-1)[0] - torch.div(Q_K_sample.sum(-1), L_K)#计算M[32, 8, 96]
+        M_top = M.topk(n_top, sorted=False)[1]#[32, 8, 25] 第一个25
 
         # use the reduced Q to calculate Q_K
         Q_reduce = Q[torch.arange(B)[:, None, None],
@@ -68,11 +71,11 @@ class ProbAttention(nn.Module):
         return Q_K, M_top
 
     def _get_initial_context(self, V, L_Q):
-        B, H, L_V, D = V.shape
+        B, H, L_V, D = V.shape #V.shape=torch.Size([32, 8, 96, 64]
         if not self.mask_flag:
             # V_sum = V.sum(dim=-2)
-            V_sum = V.mean(dim=-2)
-            contex = V_sum.unsqueeze(-2).expand(B, H, L_Q, V_sum.shape[-1]).clone()
+            V_sum = V.mean(dim=-2)#[32, 8, 64]
+            contex = V_sum.unsqueeze(-2).expand(B, H, L_Q, V_sum.shape[-1]).clone()#[32, 8, 96, 64]
         else: # use mask
             assert(L_Q == L_V) # requires that L_Q == L_V, i.e. for self-attention only
             contex = V.cumsum(dim=-2)
@@ -98,15 +101,16 @@ class ProbAttention(nn.Module):
             return (context_in, None)
 
     def forward(self, queries, keys, values, attn_mask):
-        B, L_Q, H, D = queries.shape
+        B, L_Q, H, D = queries.shape#[32, 96, 8, 64]
         _, L_K, _, _ = keys.shape
 
-        queries = queries.transpose(2,1)
+        queries = queries.transpose(2,1)#[32, 8, 96, 64]
         keys = keys.transpose(2,1)
         values = values.transpose(2,1)
 
         # U_part = self.factor * np.ceil(np.log(L_K)).astype('int').item() # c*ln(L_k)
         # u = self.factor * np.ceil(np.log(L_Q)).astype('int').item() # c*ln(L_q) 
+        
         U_part = self.factor * torch.ceil(torch.log(torch.tensor(L_K).float())).int() # c*ln(L_k)
         u = self.factor * (torch.ceil(torch.log(torch.tensor(L_Q).float())).int()) # c*ln(L_q)
         
@@ -146,7 +150,7 @@ class AttentionLayer(nn.Module):
         B, L, _ = queries.shape
         _, S, _ = keys.shape
         H = self.n_heads
-
+        #8个头 queries.shape = torch.Size([32, 96, 8, 64])
         queries = self.query_projection(queries).view(B, L, H, -1)
         keys = self.key_projection(keys).view(B, S, H, -1)
         values = self.value_projection(values).view(B, S, H, -1)

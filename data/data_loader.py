@@ -216,50 +216,52 @@ class Dataset_Custom(Dataset):
         '''
         df_raw.columns: ['date', ...(other features), target feature]
         '''
+        #修改数据集格式为上述排列
         cols = list(df_raw.columns); cols.remove(self.target); cols.remove('date')
         df_raw = df_raw[['date']+cols+[self.target]]
-
-        num_train = int(len(df_raw)*0.7)
-        num_test = int(len(df_raw)*0.2)
-        num_vali = len(df_raw) - num_train - num_test
+        #划分训练集、测试集和验证集
+        num_train = int(len(df_raw)*0.7)#0.7 train 11827
+        num_test = int(len(df_raw)*0.2)#0.2 test 3379
+        num_vali = len(df_raw) - num_train - num_test# vail 1690
         border1s = [0, num_train-self.seq_len, len(df_raw)-num_test-self.seq_len]
         border2s = [num_train, num_train+num_vali, len(df_raw)]
-        border1 = border1s[self.set_type]
+        border1 = border1s[self.set_type]  #由self.set_type改变border1s border2s索引值
         border2 = border2s[self.set_type]
         
         if self.features=='M' or self.features=='MS':
-            cols_data = df_raw.columns[1:]
-            df_data = df_raw[cols_data]
+            cols_data = df_raw.columns[1:]  #cols_data  Index(['dewPoint', 'day-of-week', '30min_index', 'Total_Area'], dtype='object')
+            df_data = df_raw[cols_data]   #删除date列
         elif self.features=='S':
-            df_data = df_raw[[self.target]]
-
-        if self.scale:
+            df_data = df_raw[[self.target]]  
+        #标椎化
+        if self.scale:  
             train_data = df_data[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)
-            data = self.scaler.transform(df_data.values)
+            data = self.scaler.transform(df_data.values)#(16896, 4)
         else:
-            data = df_data.values
-            
-        df_stamp = df_raw[['date']][border1:border2]
-        df_stamp['date'] = pd.to_datetime(df_stamp.date)
-        data_stamp = time_features(df_stamp, timeenc=self.timeenc, freq=self.freq)
-
-        self.data_x = data[border1:border2]
+            data = df_data.values#data是否标椎化后的数组(16896, 4)
+         
+        #对时间戳编码
+        df_stamp = df_raw[['date']][border1:border2]   # 索引训练集/测试集/验证集时间戳
+        df_stamp['date'] = pd.to_datetime(df_stamp.date) 
+        data_stamp = time_features(df_stamp, timeenc=self.timeenc, freq=self.freq)   
+        #data_stamp.shape(11827, 5) 增加五列属性（hour month day weekday minute）
+        self.data_x = data[border1:border2]#self.data_x = 训练集/测试集/验证集
         if self.inverse:
             self.data_y = df_data.values[border1:border2]
         else:
-            self.data_y = data[border1:border2]
+            self.data_y = data[border1:border2]#self.data_x = self.data_y
         self.data_stamp = data_stamp
     
-    def __getitem__(self, index):
+    def __getitem__(self, index):#隐性调用？
         s_begin = index
-        s_end = s_begin + self.seq_len
-        r_begin = s_end - self.label_len 
-        r_end = r_begin + self.label_len + self.pred_len
+        s_end = s_begin + self.seq_len  #s_begin + 96
+        r_begin = s_end - self.label_len #96的后半部分
+        r_end = r_begin + self.label_len + self.pred_len  #48 + 48 + 24
 
-        seq_x = self.data_x[s_begin:s_end]
-        seq_y = self.data_y[r_begin:r_end]
-        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_x = self.data_x[s_begin:s_end]  #96
+        seq_y = self.data_y[r_begin:r_end]  #72   96的后半部分（48） + 24
+        seq_x_mark = self.data_stamp[s_begin:s_end]  
         seq_y_mark = self.data_stamp[r_begin:r_end]
 
         return seq_x, seq_y, seq_x_mark, seq_y_mark
