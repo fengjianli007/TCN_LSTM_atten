@@ -18,7 +18,8 @@ from torch import Tensor
 from typing import Tuple
 
 from models.Conformer_encoder.feed_forward import FeedForwardModule
-from models.Conformer_encoder.attention import MultiHeadedSelfAttentionModule
+from models.Conformer_encoder.probattn import AttentionLayer
+
 from models.Conformer_encoder.convolution import (
     ConformerConvModule,
     Conv2dSubampling,
@@ -85,11 +86,10 @@ class ConformerBlock(nn.Module):
                 module_factor=self.feed_forward_residual_factor,
             ),
             ResidualConnectionModule(
-                module=MultiHeadedSelfAttentionModule(
+                module=AttentionLayer(
                     d_model=encoder_dim,
-                    num_heads=num_attention_heads,
+                    n_heads=num_attention_heads,
                     dropout_p=attention_dropout_p,
-                    device=device,
                 ),
             ),
             ResidualConnectionModule(
