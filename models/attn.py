@@ -1,26 +1,32 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from torch import einsum
 import numpy as np
 
 from math import sqrt
 from utils.masking import TriangularCausalMask, ProbMask
 
 class FullAttention(nn.Module):
-    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
+    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1,heads=8):
         super(FullAttention, self).__init__()
         self.scale = scale
         self.mask_flag = mask_flag
-        self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
-        
+
+        self.pre_softmax_proj = nn.Parameter(torch.randn(heads, heads))
+        self.post_softmax_proj = nn.Parameter(torch.randn(heads, heads))    
+
     def forward(self, queries, keys, values, attn_mask):
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
         scale = self.scale or 1./sqrt(E)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+    
+        # Talking-Heads Attentio
+        scores = einsum('b h i j, h k -> b k i j', scores, self.post_softmax_proj).contiguous()
+
         if self.mask_flag:
             if attn_mask is None:
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
@@ -29,21 +35,21 @@ class FullAttention(nn.Module):
 
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
         V = torch.einsum("bhls,bshd->blhd", A, values)
-        
-        if self.output_attention:
-            return (V.contiguous(), A)
-        else:
-            return (V.contiguous(), None)
+
+        return V.contiguous()
 
 class ProbAttention(nn.Module):
-    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, output_attention=False):
+    def __init__(self, mask_flag=True, factor=5, scale=None, attention_dropout=0.1, heads=8):
         super(ProbAttention, self).__init__()
         self.factor = factor
         self.scale = scale
         self.mask_flag = mask_flag
-        self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
-
+       
+        
+        self.pre_softmax_proj = nn.Parameter(torch.randn(heads, heads))
+        self.post_softmax_proj = nn.Parameter(torch.randn(heads, heads))
+       
     def _prob_QK(self, Q, K, sample_k, n_top): # n_top: c*ln(L_q)
         # Q [B, H, L, D]
         B, H, L_K, E = K.shape
@@ -93,12 +99,8 @@ class ProbAttention(nn.Module):
         context_in[torch.arange(B)[:, None, None],
                    torch.arange(H)[None, :, None],
                    index, :] = torch.matmul(attn, V).type_as(context_in)
-        if self.output_attention:
-            attns = (torch.ones([B, H, L_V, L_V])/L_V).type_as(attn).to(attn.device)
-            attns[torch.arange(B)[:, None, None], torch.arange(H)[None, :, None], index, :] = attn
-            return (context_in, attns)
-        else:
-            return (context_in, None)
+
+        return context_in
 
     def forward(self, queries, keys, values, attn_mask):
         B, L_Q, H, D = queries.shape#[32, 96, 8, 64]
@@ -118,7 +120,10 @@ class ProbAttention(nn.Module):
         u = u if u<L_Q else L_Q
         
         scores_top, index = self._prob_QK(queries, keys, sample_k=U_part, n_top=u) 
-
+        
+        # Talking-Heads Attentio
+        scores_top = einsum('b h i j, h k -> b k i j', scores_top, self.post_softmax_proj).contiguous()
+        
         # add scale factor
         scale = self.scale or 1./sqrt(D)
         if scale is not None:
@@ -126,14 +131,13 @@ class ProbAttention(nn.Module):
         # get the context
         context = self._get_initial_context(values, L_Q)
         # update the context with selected top_k queries
-        context, attn = self._update_context(context, values, scores_top, index, L_Q, attn_mask)
+        context = self._update_context(context, values, scores_top, index, L_Q, attn_mask)
         
-        return context.transpose(2,1).contiguous(), attn
+        return context.transpose(2,1).contiguous()
 
 
 class AttentionLayer(nn.Module):
-    def __init__(self, attention, d_model, n_heads, d_keys=None,
-                 d_values=None):
+    def __init__(self, attention, d_model, n_heads, d_keys=None, d_values=None):
         super(AttentionLayer, self).__init__()
 
         d_keys = d_keys or (d_model//n_heads)
@@ -155,7 +159,7 @@ class AttentionLayer(nn.Module):
         keys = self.key_projection(keys).view(B, S, H, -1)
         values = self.value_projection(values).view(B, S, H, -1)
 
-        out, attn = self.inner_attention(
+        out = self.inner_attention(
             queries,
             keys,
             values,
@@ -163,4 +167,4 @@ class AttentionLayer(nn.Module):
         )
         out = out.view(B, L, -1)
 
-        return self.out_projection(out), attn
+        return self.out_projection(out)

@@ -18,8 +18,8 @@ from torch import Tensor
 from typing import Tuple
 
 from models.Conformer_encoder.feed_forward import FeedForwardModule
-from models.Conformer_encoder.probattn import AttentionLayer
-
+from models.Conformer_encoder.attention import AttentionLayer,ProbAttention
+from models.Conformer_encoder.TPA import TPALSTM
 from models.Conformer_encoder.convolution import (
     ConformerConvModule,
     Conv2dSubampling,
@@ -39,7 +39,7 @@ class ConformerBlock(nn.Module):
 
     Args:
         encoder_dim (int, optional): Dimension of conformer encoder
-        num_attention_heads (int, optional): Number of attention heads
+        n_heads (int, optional): Number of attention heads
         feed_forward_expansion_factor (int, optional): Expansion factor of feed forward module
         conv_expansion_factor (int, optional): Expansion factor of conformer convolution module
         feed_forward_dropout_p (float, optional): Probability of feed forward module dropout
@@ -58,7 +58,7 @@ class ConformerBlock(nn.Module):
     def __init__(
             self,
             encoder_dim: int = 512,
-            num_attention_heads: int = 8,
+            n_heads: int = 8,
             feed_forward_expansion_factor: int = 4,
             conv_expansion_factor: int = 2,
             feed_forward_dropout_p: float = 0.1,
@@ -66,6 +66,8 @@ class ConformerBlock(nn.Module):
             conv_dropout_p: float = 0.1,
             conv_kernel_size: int = 31,
             half_step_residual: bool = True,
+            factor:int = 5,
+            
             device: torch.device = 'cuda',
     ):
         super(ConformerBlock, self).__init__()
@@ -85,13 +87,18 @@ class ConformerBlock(nn.Module):
                 ),
                 module_factor=self.feed_forward_residual_factor,
             ),
+            # ResidualConnectionModule(
+            #     module=AttentionLayer(ProbAttention(mask_flag=False, factor=factor, scale=None, heads=n_heads),
+            #         d_model=encoder_dim,
+            #         n_heads=n_heads,
+            #         dropout_p=attention_dropout_p,
+            #     ),
+            # ),
             ResidualConnectionModule(
-                module=AttentionLayer(
-                    d_model=encoder_dim,
-                    n_heads=num_attention_heads,
-                    dropout_p=attention_dropout_p,
+                module=TPALSTM(cuda=False,window=96, hidRNN=100,hidden_state_features=512,
+    hidCNN=10,hidSkip=5,CNN_kernel=1,skip=24,highway_window=24,num_layers_lstm=1,batch_size=64,dropout=0.1,output_fun='sigmoid'
                 ),
-            ),
+            ),            
             ResidualConnectionModule(
                 module=ConformerConvModule(
                     in_channels=encoder_dim,
@@ -126,7 +133,7 @@ class ConformerEncoder(nn.Module):
         input_dim (int, optional): Dimension of input vector
         encoder_dim (int, optional): Dimension of conformer encoder
         num_layers (int, optional): Number of conformer blocks
-        num_attention_heads (int, optional): Number of attention heads
+        n_heads (int, optional): Number of attention heads
         feed_forward_expansion_factor (int, optional): Expansion factor of feed forward module
         conv_expansion_factor (int, optional): Expansion factor of conformer convolution module
         feed_forward_dropout_p (float, optional): Probability of feed forward module dropout
@@ -148,7 +155,7 @@ class ConformerEncoder(nn.Module):
             self,
             encoder_dim: int = 512,
             num_layers: int = 17,
-            num_attention_heads: int = 8,
+            n_heads: int = 8,
             feed_forward_expansion_factor = 4,
             conv_expansion_factor= 2,
             feed_forward_dropout_p = 0.1,
@@ -156,6 +163,7 @@ class ConformerEncoder(nn.Module):
             conv_dropout_p = 0.1,
             conv_kernel_size = 31,
             half_step_residual: bool = True,
+            factor: int = 5,
             device: torch.device = 'cuda',
     ):
         super(ConformerEncoder, self).__init__()
@@ -166,7 +174,7 @@ class ConformerEncoder(nn.Module):
         # )
         self.layers = nn.ModuleList([ConformerBlock(
             encoder_dim=encoder_dim,
-            num_attention_heads=num_attention_heads,
+            n_heads=n_heads,
             feed_forward_expansion_factor=feed_forward_expansion_factor,
             conv_expansion_factor=conv_expansion_factor,
             feed_forward_dropout_p=feed_forward_dropout_p,
@@ -174,6 +182,7 @@ class ConformerEncoder(nn.Module):
             conv_dropout_p=conv_dropout_p,
             conv_kernel_size=conv_kernel_size,
             half_step_residual=half_step_residual,
+            factor = factor,
             device=device,
         ).to(device) for _ in range(num_layers)])
 
