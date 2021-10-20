@@ -60,7 +60,7 @@ args.use_amp = False # whether to use automatic mixed precision training
 
 args.num_workers = 0
 args.itr = 1
-args.train_epochs = 6
+args.train_epochs = 12
 args.patience = 3
 args.des = 'exp'
 
